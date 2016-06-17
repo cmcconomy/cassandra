@@ -1,0 +1,13 @@
+# The overlay accepts any configuration settings that you would normally find
+# in cassandra.yaml
+#
+# The purpose of the overlay is to allow you to maintain a "standard" config
+# which is distributed to all new nodes, allowing you to only keep the
+# configuration settings that vary from server-to-server in this file.
+#
+# A common example is when you have to specify ips to bind to, eg:
+# listen_address: localhost
+# rpc_address: localhost
+#
+# refer to documentation in cassandra.yaml for more details on particular
+# settings.
