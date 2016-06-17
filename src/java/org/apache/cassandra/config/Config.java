@@ -22,6 +22,7 @@ import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
@@ -460,5 +461,41 @@ public class Config
         }
 
         logger.info("Node configuration:[" + Joiner.on("; ").join(configMap.entrySet()) + "]");
+    }
+    
+    /**
+     * Takes all fields in the provided "overlay" config and overwrites the same fields in this config.
+     * @param overlay the configuration to overlay
+     */
+    public void overlay(Config overlay)
+    {
+    	// This is for reference, since many fields have default values.
+    	Config defaultConfig = new Config();
+    	
+    	for(Field field : Config.class.getFields())
+    	{
+            // ignore the constants
+            if (Modifier.isFinal(field.getModifiers()))
+            {
+                continue;
+            }
+                
+            try
+    		{
+	    		Object overlayValue = field.get(overlay);
+	    		if(overlayValue==null)
+	    		{
+	    			continue;
+	    		}
+	    		if(!Objects.deepEquals(overlayValue,field.get(defaultConfig)))
+	    		{
+	    			field.set(this, overlayValue);
+	    		}
+    		}
+    		catch(IllegalAccessException e)
+    		{
+    			logger.warn(String.format("Unable to overlay Configuration property '%s'",field.getName()),e);
+    		}
+    	}
     }
 }

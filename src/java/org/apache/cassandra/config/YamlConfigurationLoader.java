@@ -36,10 +36,10 @@ import com.google.common.io.ByteStreams;
 
 import org.apache.commons.lang3.SystemUtils;
 
+import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.exceptions.ConfigurationFileNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import org.apache.cassandra.exceptions.ConfigurationException;
 import org.yaml.snakeyaml.TypeDescription;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.Constructor;
@@ -48,20 +48,29 @@ import org.yaml.snakeyaml.introspector.MissingProperty;
 import org.yaml.snakeyaml.introspector.Property;
 import org.yaml.snakeyaml.introspector.PropertyUtils;
 
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
+import com.google.common.io.ByteStreams;
+
 public class YamlConfigurationLoader implements ConfigurationLoader
 {
     private static final Logger logger = LoggerFactory.getLogger(YamlConfigurationLoader.class);
 
     private final static String DEFAULT_CONFIGURATION = "cassandra.yaml";
+    private final static String DEFAULT_CONFIGURATION_OVERLAY = "cassandra-overlay.yaml";
+    private final static String PROPKEY_CONFIG = "cassandra.config";
+    private final static String PROPKEY_CONFIG_OVERLAY = "cassandra.config.overlay";
+    private final static String PROPKEY_CONFIG_OVERLAY_DISABLE = "cassandra.config.overlay.disable";
 
     /**
      * Inspect the classpath to find storage configuration file
      */
-    private static URL getStorageConfigURL() throws ConfigurationException
+    private static URL getStorageConfigURL(String propertyKey, String defaultValue) throws ConfigurationException
     {
-        String configUrl = System.getProperty("cassandra.config");
+        String configUrl = System.getProperty(propertyKey);
         if (configUrl == null)
-            configUrl = DEFAULT_CONFIGURATION;
+            configUrl = defaultValue;
 
         URL url;
         try
@@ -78,11 +87,11 @@ public class YamlConfigurationLoader implements ConfigurationLoader
                 String required = "file:" + File.separator + File.separator;
                 if (!configUrl.startsWith(required))
                     throw new ConfigurationException(String.format(
-                        "Expecting URI in variable: [cassandra.config]. Found[%s]. Please prefix the file with [%s%s] for local " +
+                        "Expecting URI in variable: [%s]. Found[%s]. Please prefix the file with [%s%s] for local " +
                         "files and [%s<server>%s] for remote files. If you are executing this from an external tool, it needs " +
                         "to set Config.setClientMode(true) to avoid loading configuration.",
-                        configUrl, required, File.separator, required, File.separator));
-                throw new ConfigurationException("Cannot locate " + configUrl + ".  If this is a local file, please confirm you've provided " + required + File.separator + " as a URI prefix.");
+                        propertyKey, configUrl, required, File.separator, required, File.separator));
+                throw new ConfigurationFileNotFoundException("Cannot locate " + configUrl + ".  If this is a local file, please confirm you've provided " + required + File.separator + " as a URI prefix.");
             }
         }
 
@@ -91,14 +100,56 @@ public class YamlConfigurationLoader implements ConfigurationLoader
         return url;
     }
 
-    private static final URL storageConfigURL = getStorageConfigURL();
+    private static boolean checkDisableOverlay() throws ConfigurationException
+    {
+    	boolean disableOverlay = false;
+
+    	String disableOverlayStr = System.getProperty(PROPKEY_CONFIG_OVERLAY_DISABLE);
+    	if(disableOverlayStr != null)
+    	{
+    		if(disableOverlayStr.toLowerCase().equals("true"))
+    		{
+    			disableOverlay = true;
+    		}
+    		else if(!disableOverlayStr.toLowerCase().equals("false")) {
+    			throw new ConfigurationException(String.format("System property '%s', when present, should be set to 'true' or 'false'; it was set to '%s'",PROPKEY_CONFIG_OVERLAY_DISABLE, disableOverlayStr));
+    		}
+    	}
+    		
+    	return disableOverlay;
+    }
+    
+    private static final boolean disableOverlay = checkDisableOverlay();
+    private static final URL storageConfigURL = getStorageConfigURL(PROPKEY_CONFIG, DEFAULT_CONFIGURATION);
+    private static final URL storageOverlayConfigURL = disableOverlay?null:getStorageConfigURL(PROPKEY_CONFIG_OVERLAY, DEFAULT_CONFIGURATION_OVERLAY);
 
     @Override
     public Config loadConfig() throws ConfigurationException
     {
-        return loadConfig(storageConfigURL);
+    	Config config = loadConfig(storageConfigURL);
+    	
+    	if(!disableOverlay)
+    	{
+    		try
+    		{
+	    		Config overlay = loadConfig(storageOverlayConfigURL);
+	    		config.overlay(overlay);
+    		}
+    		catch(ConfigurationFileNotFoundException e)
+    		{
+    			if(!DEFAULT_CONFIGURATION_OVERLAY.equals(storageOverlayConfigURL))
+    			{
+    				// if an overlay was specified and didn't exist, we should throw an exception
+    				// the operator clearly expected to load an overlay and wouldn't like a surprise.
+    				throw e;
+    			}
+    			// else swallow the error.. not finding an overlay by default is totally expected.
+    		}
+    	}
+    	
+        return config;
     }
-
+    
     public Config loadConfig(URL url) throws ConfigurationException
     {
         try
