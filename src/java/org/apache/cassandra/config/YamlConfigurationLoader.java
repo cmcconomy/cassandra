@@ -48,11 +48,6 @@ import org.yaml.snakeyaml.introspector.MissingProperty;
 import org.yaml.snakeyaml.introspector.Property;
 import org.yaml.snakeyaml.introspector.PropertyUtils;
 
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
-import com.google.common.io.ByteStreams;
-
 public class YamlConfigurationLoader implements ConfigurationLoader
 {
     private static final Logger logger = LoggerFactory.getLogger(YamlConfigurationLoader.class);
